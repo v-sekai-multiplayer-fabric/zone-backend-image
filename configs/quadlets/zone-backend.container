@@ -1,0 +1,25 @@
+[Unit]
+Description=zone-backend (URO) Elixir lobby + identity + planner
+Documentation=https://github.com/v-sekai-multiplayer-fabric/zone-backend
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/v-sekai-multiplayer-fabric/zone-backend:latest
+ContainerName=zone-backend
+# UDP/443 serves the client streaming surface (HTTP/3 / WebTransport).
+# Phoenix HTTP/JSON is on the same port via h3.
+PublishPort=443:443/udp
+Volume=/etc/zone-backend/db-certs:/etc/zone-backend/db-certs:ro,Z
+Volume=/etc/zone-backend/tls:/etc/zone-backend/tls:ro,Z
+EnvironmentFile=/etc/zone-backend/env
+# Binding to 443 needs CAP_NET_BIND_SERVICE.
+AddCapability=NET_BIND_SERVICE
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target
