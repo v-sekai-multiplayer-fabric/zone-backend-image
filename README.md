@@ -1,53 +1,40 @@
-# zone-backend-image
+# zone-backend-quadlet
 
-V-Sekai zone-backend VM image: [zone-backend](https://github.com/v-sekai-multiplayer-fabric/zone-backend)
-(URO), an Elixir/Phoenix backend that hosts identity, the zone directory,
+Podman [quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+source for [zone-backend](https://github.com/v-sekai-multiplayer-fabric/zone-backend)
+(URO) — an Elixir/Phoenix backend hosting identity, the zone directory,
 and the planner JSON surface (plan / replan / rebac_check / ping). Run
-as a podman quadlet on top of `linux-base-image`. Built once per release
-via packer; consumed by the `infra` repo as the qcow2 for
-`harvester_virtualmachine.zone_backend`.
+by systemd on an AlmaLinux host.
 
-## What's in the image
+This repo is the source of truth for the unit; it is installed onto a
+host rather than baked into a VM image.
 
-Inherits everything from `linux-base-image` (AlmaLinux 9 + podman +
-chrony + qemu-guest-agent), and adds:
+## Layout
 
-- `/etc/containers/systemd/zone-backend.container` — podman quadlet
-  running `ghcr.io/v-sekai-multiplayer-fabric/zone-backend`
-- `/etc/zone-backend/db-certs` — mountpoint for the CRDB mTLS client
-  certs (gateway_writer / gateway_reader roles, talking to the
-  cockroach-crdb-image VM)
-- `/etc/zone-backend/tls` — mountpoint for the Let's Encrypt cert
-  serving the public client surface
+- `quadlets/zone-backend.container` — the quadlet, publishing UDP/443
+  (HTTP/3 / WebTransport client surface; Phoenix HTTP/JSON shares it via
+  h3). Tag pinned here.
+- `install.sh` — installs the unit, creates `/etc/zone-backend/db-certs`
+  (CRDB mTLS client certs) and `/etc/zone-backend/tls` (public TLS cert)
+  mountpoints, pre-pulls the image, reloads systemd.
 
-The zone-backend image is pre-pulled into podman's local store so
-first boot is fast. Tag pinned in
-`configs/quadlets/zone-backend.container`; bumping is a deliberate
-edit + re-bake.
-
-Service env file (`/etc/zone-backend/env`) is not baked. The infra
-side writes it at first boot with `DATABASE_URL`, `MIGRATION_URL`,
-`SECRET_KEY_BASE`, and any per-deployment Phoenix config so the same
-image is reusable across deployments.
-
-## Build
-
-CI on push to main + weekly schedule. Local:
+## Install
 
 ```sh
-cd packer
-bash scripts/prepare-cidata.sh
-packer init build.pkr.hcl
-packer build build.pkr.hcl
-ls ../output/
+sudo ./install.sh
+# write /etc/zone-backend/env (see below)
+sudo systemctl start zone-backend.service
 ```
 
-## Inheritance
+## Configuration (per-deployment, NOT in this repo)
 
-Pin the parent version explicitly in `build.pkr.hcl`:
+- `/etc/zone-backend/env` — `DATABASE_URL`, `MIGRATION_URL`,
+  `SECRET_KEY_BASE`, and any per-deployment Phoenix config.
+- `/etc/zone-backend/db-certs` — CRDB mTLS client certs
+  (gateway_writer / gateway_reader).
+- `/etc/zone-backend/tls` — public TLS cert.
 
-```hcl
-variable "source_image_url" {
-  default = "https://github.com/v-sekai-multiplayer-fabric/linux-base-image/releases/download/v0.1.0/linux-base-image.qcow2"
-}
-```
+## CI
+
+`.github/workflows/lint.yml` validates the unit via podman's systemd
+generator on every push/PR.
